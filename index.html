@@ -613,16 +613,16 @@ function rTasks(ba){
         <option value="med">🟡 Média</option>
         <option value="low">🟢 Baixa</option>
       </select>
-      <button class="btn btn-p btn-sm" onclick="openTaskMod(null,null)"><i class="ti ti-plus"></i>Nova tarefa</button>
+      <button class="btn btn-sm" onclick="forceGenerateTasks()" title="Gerar tarefas automáticas para todos os clientes"><i class="ti ti-refresh"></i>Gerar semana</button><button class="btn btn-p btn-sm" onclick="openTaskMod(null,null)"><i class="ti ti-plus"></i>Nova tarefa</button>
     </span>
   </div>`;
   let body='';
   if(taskView==='dash'){
     body=`<div class="task-dash-grid">
-      <div class="mc"><div class="ml">Para hoje</div><div class="mv" style="color:${todayT.length>0?'#A32D2D':'#1D9E75'}">${todayT.length}</div><div class="ms">pendentes</div></div>
-      <div class="mc"><div class="ml">Esta semana</div><div class="mv">${weekT.length}</div><div class="ms">tarefas</div></div>
-      <div class="mc"><div class="ml">Vencidas</div><div class="mv" style="color:${overdue.length>0?'#A32D2D':'#1D9E75'}">${overdue.length}</div><div class="ms">em atraso</div></div>
-      <div class="mc"><div class="ml">Total pendente</div><div class="mv">${pending.length}</div><div class="ms">${done.length} concluídas</div></div>
+      <div class="mc" style="cursor:pointer" onclick="taskView='week';render()"><div class="ml">Para hoje</div><div class="mv" style="color:${todayT.length>0?'#A32D2D':'#1D9E75'}">${todayT.length}</div><div class="ms">pendentes →</div></div>
+      <div class="mc" style="cursor:pointer" onclick="taskView='week';render()"><div class="ml">Esta semana</div><div class="mv">${weekT.length}</div><div class="ms">tarefas →</div></div>
+      <div class="mc" style="cursor:pointer" onclick="taskView='kanban';render()"><div class="ml">Vencidas</div><div class="mv" style="color:${overdue.length>0?'#A32D2D':'#1D9E75'}">${overdue.length}</div><div class="ms">em atraso →</div></div>
+      <div class="mc" style="cursor:pointer" onclick="taskView='kanban';render()"><div class="ml">Total pendente</div><div class="mv">${pending.length}</div><div class="ms">${done.length} concluídas →</div></div>
     </div>
     <div class="g2">
       <div><div class="card"><div class="ctitle"><i class="ti ti-sun"></i>Para hoje — ${new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'})}</div>
@@ -808,6 +808,145 @@ async function confirmDocUp(cid){
   pendDocFiles=null;document.getElementById('dum-'+cid).style.display='none';renderCp();
 }
 function cancelDocUp(cid){pendDocFiles=null;document.getElementById('dum-'+cid).style.display='none';}
+
+
+// ═══ AUTO TASK GENERATION ═══
+const CL_TASKS = {
+  '0. Diamante': {
+    daily: ['Verificar anomalias no YouTube Studio','Checar reivindicações ativas','Monitorar comentários críticos','Verificar receita diária','Revisar thumbnails em destaque','Analisar tráfego das últimas 24h'],
+    weekly: ['Relatório semanal de métricas (views, inscritos, CTR, watchtime)','Conferir grade de postagens cumprida','Verificar monetização em todos os canais','Analisar CPM/RPM vs semana anterior','Setup e metadados dos vídeos publicados','Atualizar dossiê do canal','Checar shorts, VODs e lives','Enviar resumo ao cliente'],
+    monthly: ['Relatório mensal completo','Comparar vs mês anterior','Atualizar média do canal','Pontos de atenção do mês','Recomendações para próximo mês','Revisar histórico de anomalias','Checar monetização e reivindicações','Avaliar reclassificação','Atualizar receita no dossiê','Reunião com cliente']
+  },
+  '1. Ouro': {
+    daily: ['Verificar anomalias no YouTube Studio','Checar reivindicações ativas','Monitorar performance dos últimos vídeos'],
+    weekly: ['Relatório semanal de métricas','Conferir grade de postagens','Verificar monetização','Setup e metadados','Atualizar dossiê','Checar entrega de conteúdo'],
+    monthly: ['Relatório mensal completo','Comparar vs mês anterior','Atualizar média do canal','Pontos de atenção e recomendações','Revisar anomalias','Checar monetização','Avaliar reclassificação','Atualizar receita']
+  },
+  '2. Prata': {
+    daily: ['Verificar anomalias críticas','Checar reivindicações urgentes'],
+    weekly: ['Checar métricas principais','Conferir grade de postagens','Setup e metadados'],
+    monthly: ['Relatório mensal simplificado','Comparar vs mês anterior','Pontos de atenção','Atualizar dossiê','Checar monetização']
+  },
+  '3. Bronze': {
+    daily: [],
+    weekly: ['Verificar anomalias','Checar monetização'],
+    monthly: ['Relatório mensal básico','Checar reivindicações','Atualizar dossiê se necessário']
+  }
+};
+
+async function generateAutoTasks(){
+  const tod = today();
+  const d = new Date(tod+'T12:00');
+  const dow = d.getDay(); // 1=seg, 5=sex, 4=qui
+  if(dow !== 1){
+    console.log('Geração automática só às segundas. Hoje é dia', dow);
+    return;
+  }
+  console.log('Segunda-feira — gerando checks automáticos...');
+
+  // Delete old auto tasks
+  try{ await apiDelete('tasks','type=eq.auto&owner_id=eq.'+U.id); }catch(e){ console.warn(e); }
+  TASKS = TASKS.filter(t=>t.type!=='auto');
+
+  // Calculate key dates for this week
+  const toStr = s => s.toISOString().slice(0,10);
+  
+  // Days Mon-Fri for daily checks
+  const weekDays = Array.from({length:5},(_,i)=>{
+    const day = new Date(d); day.setDate(d.getDate()+i); return toStr(day);
+  });
+  
+  // Friday = weekly check
+  const friday = new Date(d); friday.setDate(d.getDate()+4);
+  const fridayStr = toStr(friday);
+  
+  // Penultimate Thursday of this month
+  const year = d.getFullYear(), month = d.getMonth();
+  const lastDay = new Date(year, month+1, 0);
+  let thursdays = [];
+  for(let day=1; day<=lastDay.getDate(); day++){
+    const dd = new Date(year,month,day);
+    if(dd.getDay()===4) thursdays.push(toStr(dd));
+  }
+  const penultThursday = thursdays.length>=2 ? thursdays[thursdays.length-2] : thursdays[0];
+
+  const newTasks = [];
+  
+  for(const c of CLIENTS){
+    const cl = CL_TASKS[c.category];
+    if(!cl) continue;
+
+    // DAILY CHECKS — one per weekday with checklist as description
+    if(cl.daily.length > 0){
+      for(const dayStr of weekDays){
+        const checklistStr = cl.daily.map((item,i)=>`[ ] ${item}`).join('\n');
+        newTasks.push({
+          title:`Check diário — ${c.name}`,
+          client_id:c.id, owner_id:U.id,
+          priority: c.category==='0. Diamante'?'high':'med',
+          status:'todo', type:'auto',
+          due_date:dayStr,
+          description:checklistStr
+        });
+      }
+    }
+
+    // WEEKLY CHECK — Friday with semanal checklist
+    if(cl.weekly.length > 0){
+      const checklistStr = cl.weekly.map(item=>`[ ] ${item}`).join('\n');
+      newTasks.push({
+        title:`Check semanal — ${c.name}`,
+        client_id:c.id, owner_id:U.id,
+        priority: c.category==='0. Diamante'?'high':'med',
+        status:'todo', type:'auto',
+        due_date:fridayStr,
+        description:checklistStr
+      });
+    }
+
+    // MONTHLY CHECK — penultimate Thursday with mensal checklist
+    if(cl.monthly.length > 0 && penultThursday){
+      const checklistStr = cl.monthly.map(item=>`[ ] ${item}`).join('\n');
+      newTasks.push({
+        title:`Check mensal — ${c.name}`,
+        client_id:c.id, owner_id:U.id,
+        priority: c.category==='0. Diamante'?'high':'med',
+        status:'todo', type:'auto',
+        due_date:penultThursday,
+        description:checklistStr
+      });
+    }
+  }
+
+  // Insert in batches
+  let created = 0;
+  for(let i=0;i<newTasks.length;i+=10){
+    const batch = newTasks.slice(i,i+10);
+    try{
+      const results = await Promise.all(batch.map(t=>apiInsert('tasks',t)));
+      results.forEach(r=>{if(r)TASKS.push(r);});
+      created += batch.length;
+    }catch(e){ console.warn('batch insert error:',e); }
+  }
+
+  console.log(`✅ ${created} checks criados para ${CLIENTS.length} clientes`);
+  render();
+
+  const banner = document.createElement('div');
+  banner.style.cssText='position:fixed;bottom:20px;right:20px;background:var(--txt);color:var(--bg);padding:12px 20px;border-radius:12px;font-size:13px;font-weight:600;z-index:999;box-shadow:0 4px 20px rgba(0,0,0,.2)';
+  banner.innerHTML=`<i class="ti ti-check" style="color:#86EFAC"></i> ${created} checks criados para a semana!`;
+  document.body.appendChild(banner);
+  setTimeout(()=>banner.remove(), 5000);
+}
+
+
+async function forceGenerateTasks(){
+  if(!confirm(`Gerar tarefas automáticas para todos os ${CLIENTS.length} clientes?\n\nIsso vai apagar tarefas automáticas anteriores e recriar.`)) return;
+  const d = new Date(); const realDow = d.getDay();
+  // Temporarily fake Monday
+  d.setDate(d.getDate() - (realDow===0?6:realDow-1));
+  await generateAutoTasks();
+}
 
 // PWA Service Worker
 if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));}
