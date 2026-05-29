@@ -323,23 +323,22 @@ async function doAuth(){
     if(authMode==='register'){
       const name=document.getElementById('iname').value.trim();
       if(!name){showErr('Informe seu nome');document.getElementById('abtn').textContent='Criar conta';return;}
-      const r=await fetch(`${SB_URL}/auth/v1/signup`,{method:'POST',headers:{'apikey':SB_KEY,'Content-Type':'application/json'},body:JSON.stringify({email,password:pass,data:{full_name:name}})});
-      const d=await r.json();if(d.error)throw new Error(d.error.message||d.msg||'Erro ao criar conta');
+      const{error}=await sb.auth.signUp({email,password:pass,options:{data:{full_name:name}}});
+      if(error)throw error;
       showErr('Conta criada! Verifique seu e-mail.');
     }else{
-      const r=await fetch(`${SB_URL}/auth/v1/token?grant_type=password`,{method:'POST',headers:{'apikey':SB_KEY,'Content-Type':'application/json'},body:JSON.stringify({email,password:pass})});
-      const d=await r.json();
-      if(d.error||d.error_code)throw new Error(d.error_description||d.msg||'E-mail ou senha incorretos');
-      U={id:d.user?.id,email:d.user?.email,user_metadata:d.user?.user_metadata};
-      SESSION_TOKEN=d.access_token;
+      const{data,error}=await sb.auth.signInWithPassword({email,password:pass});
+      if(error)throw error;
+      U=data.user;
+      SESSION_TOKEN=data.session.access_token;
       localStorage.setItem('crm_session',JSON.stringify({user:U,token:SESSION_TOKEN}));
       onLogin();
     }
-  }catch(e){showErr(e.message);}
+  }catch(e){showErr(e.message==='Invalid login credentials'?'E-mail ou senha incorretos':e.message);}
   document.getElementById('abtn').textContent=authMode==='login'?'Entrar':'Criar conta';
 }
 function showErr(m){const e=document.getElementById('aerr');e.textContent=m;e.style.display='block';}
-async function signOut(){try{await fetch(`${SB_URL}/auth/v1/logout`,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SESSION_TOKEN}});}catch(e){}localStorage.removeItem('crm_session');SESSION_TOKEN=null;U=null;location.reload();}
+async function signOut(){await sb.auth.signOut();localStorage.removeItem('crm_session');SESSION_TOKEN=null;U=null;location.reload();}
 
 let SESSION_TOKEN=null;
 function onLogin(){
@@ -367,6 +366,9 @@ function onLogin(){
 
 // LOAD
 function getToken(){return SESSION_TOKEN||SB_KEY;}
+async function refreshToken(){
+  try{const{data}=await sb.auth.getSession();if(data?.session?.access_token){SESSION_TOKEN=data.session.access_token;}}catch(e){}
+}
 async function apiFetch(table,params=''){const tok=getToken();const r=await fetch(`${SB_URL}/rest/v1/${table}?${params}`,{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+tok}});if(!r.ok)throw new Error(await r.text());return r.json();}
 async function apiInsert(table,data){const tok=getToken();const r=await fetch(`${SB_URL}/rest/v1/${table}`,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+tok,'Content-Type':'application/json','Prefer':'return=representation'},body:JSON.stringify(data)});if(!r.ok)throw new Error(await r.text());const d=await r.json();return Array.isArray(d)?d[0]:d;}
 async function apiUpdate(table,data,filter){const tok=getToken();const r=await fetch(`${SB_URL}/rest/v1/${table}?${filter}`,{method:'PATCH',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+tok,'Content-Type':'application/json','Prefer':'return=representation'},body:JSON.stringify(data)});if(!r.ok)throw new Error(await r.text());return r.json();}
