@@ -349,17 +349,28 @@ function onLogin(){
   loadAll().then(render).catch(e=>console.error('loadAll error:',e));
 }
 // Restore session from localStorage
-(function(){
+(async function(){
   try{
+    // Try SDK session first
+    const{data}=await sb.auth.getSession();
+    if(data?.session){
+      U=data.session.user;
+      SESSION_TOKEN=data.session.access_token;
+      localStorage.setItem('crm_session',JSON.stringify({user:U,token:SESSION_TOKEN}));
+      onLogin();
+      return;
+    }
+    // Try localStorage fallback
     const saved=localStorage.getItem('crm_session');
     if(saved){
-      const {user,token}=JSON.parse(saved);
+      const{user,token}=JSON.parse(saved);
       U=user;SESSION_TOKEN=token;
       onLogin();
     }else{
       document.getElementById('auth').style.display='flex';
     }
   }catch(e){
+    console.error('Session restore error:',e);
     document.getElementById('auth').style.display='flex';
   }
 })();
@@ -374,7 +385,7 @@ async function apiInsert(table,data){const tok=getToken();const r=await fetch(`$
 async function apiUpdate(table,data,filter){const tok=getToken();const r=await fetch(`${SB_URL}/rest/v1/${table}?${filter}`,{method:'PATCH',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+tok,'Content-Type':'application/json','Prefer':'return=representation'},body:JSON.stringify(data)});if(!r.ok)throw new Error(await r.text());return r.json();}
 async function apiDelete(table,filter){const tok=getToken();const r=await fetch(`${SB_URL}/rest/v1/${table}?${filter}`,{method:'DELETE',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+tok}});if(!r.ok)throw new Error(await r.text());}
 async function apiUpsert(table,data,conflict){const tok=getToken();const r=await fetch(`${SB_URL}/rest/v1/${table}?on_conflict=${conflict}`,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+tok,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=representation'},body:JSON.stringify(data)});if(!r.ok)throw new Error(await r.text());return r.json();}
-async function loadAll(){try{const[c,t,ch,m,p,o,n,f]=await Promise.all([apiFetch('clients','order=name'),apiFetch('tasks', U?.id ? `owner_id=eq.${U.id}&order=due_date` : 'order=due_date'),apiFetch('checklist_items', U?.id ? `user_id=eq.${U.id}` : ''),apiFetch('channel_metrics',''),apiFetch('projects', U?.id ? `owner_id=eq.${U.id}` : ''),apiFetch('okrs', U?.id ? `owner_id=eq.${U.id}` : ''),apiFetch('notes',''),apiFetch('files', U?.id ? `owner_id=eq.${U.id}` : '')]);CLIENTS=c||[];TASKS=t||[];CHECKS={};(ch||[]).forEach(x=>CHECKS[x.key]=x.done);METRICS={};(m||[]).forEach(x=>METRICS[`${x.client_id}|${x.channel_index}|${x.week_key}`]=x);PROJECTS=p||[];OKRS=o||[];NOTES={};(n||[]).forEach(x=>NOTES[x.client_id]=x);FILES={};(f||[]).forEach(x=>{if(!FILES[x.client_id])FILES[x.client_id]=[];FILES[x.client_id].push(x);});}catch(e){document.getElementById('main-body').innerHTML=`<div class="empty"><i class="ti ti-alert-circle"></i><p>Erro ao carregar dados.<br><small>${e.message}</small><br><br><button class="btn" onclick="loadAll().then(render)">Tentar novamente</button></p></div>`;}}
+async function loadAll(){try{const[c,t,ch,m,p,o,n,f]=await Promise.all([apiFetch('clients','order=name'),apiFetch('tasks','order=due_date'),apiFetch('checklist_items', U&&U.id ? 'user_id=eq.'+U.id : 'limit=0'),apiFetch('channel_metrics',''),apiFetch('projects',''),apiFetch('okrs',''),apiFetch('notes',''),apiFetch('files','')]);CLIENTS=c||[];TASKS=t||[];CHECKS={};(ch||[]).forEach(x=>CHECKS[x.key]=x.done);METRICS={};(m||[]).forEach(x=>METRICS[`${x.client_id}|${x.channel_index}|${x.week_key}`]=x);PROJECTS=p||[];OKRS=o||[];NOTES={};(n||[]).forEach(x=>NOTES[x.client_id]=x);FILES={};(f||[]).forEach(x=>{if(!FILES[x.client_id])FILES[x.client_id]=[];FILES[x.client_id].push(x);});}catch(e){document.getElementById('main-body').innerHTML=`<div class="empty"><i class="ti ti-alert-circle"></i><p>Erro ao carregar dados.<br><small>${e.message}</small><br><br><button class="btn" onclick="loadAll().then(render)">Tentar novamente</button></p></div>`;}}
 
 // NAV
 function goTab(t){tab=t;catF='all';sq='';document.querySelectorAll('.nt').forEach(e=>e.classList.remove('on'));document.getElementById('nt-'+t)?.classList.add('on');closeCp();render();}
