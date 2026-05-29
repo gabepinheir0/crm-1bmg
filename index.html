@@ -314,19 +314,64 @@ const CL={'0. Diamante':{daily:['Verificar anomalias no YouTube Studio','Checar 
 // AUTH
 let authMode='login';
 function toggleAuth(){authMode=authMode==='login'?'register':'login';document.getElementById('ah').textContent=authMode==='login'?'Entrar no CRM':'Criar conta';document.getElementById('asub').textContent=authMode==='login'?'Acesse sua carteira de clientes':'Preencha seus dados';document.getElementById('abtn').textContent=authMode==='login'?'Entrar':'Criar conta';document.getElementById('namef').style.display=authMode==='register'?'block':'none';document.getElementById('asw').innerHTML=authMode==='login'?'Não tem conta? <a onclick="toggleAuth()">Criar conta</a>':'Já tem conta? <a onclick="toggleAuth()">Entrar</a>';document.getElementById('aerr').style.display='none';}
-async function doAuth(){const email=document.getElementById('iemail').value.trim(),pass=document.getElementById('ipass').value;if(!email||!pass){showErr('Preencha e-mail e senha');return;}document.getElementById('abtn').textContent='Aguarde...';document.getElementById('aerr').style.display='none';try{if(authMode==='register'){const name=document.getElementById('iname').value.trim();if(!name){showErr('Informe seu nome');document.getElementById('abtn').textContent='Criar conta';return;}const{error}=await sb.auth.signUp({email,password:pass,options:{data:{full_name:name}}});if(error)throw error;showErr('Conta criada! Verifique seu e-mail.');}else{const{error}=await sb.auth.signInWithPassword({email,password:pass});if(error)throw error;}}catch(e){showErr(e.message==='Invalid login credentials'?'E-mail ou senha incorretos':e.message);}document.getElementById('abtn').textContent=authMode==='login'?'Entrar':'Criar conta';}
+async function doAuth(){
+  const email=document.getElementById('iemail').value.trim(),pass=document.getElementById('ipass').value;
+  if(!email||!pass){showErr('Preencha e-mail e senha');return;}
+  document.getElementById('abtn').textContent='Aguarde...';
+  document.getElementById('aerr').style.display='none';
+  try{
+    if(authMode==='register'){
+      const name=document.getElementById('iname').value.trim();
+      if(!name){showErr('Informe seu nome');document.getElementById('abtn').textContent='Criar conta';return;}
+      const r=await fetch(`${SB_URL}/auth/v1/signup`,{method:'POST',headers:{'apikey':SB_KEY,'Content-Type':'application/json'},body:JSON.stringify({email,password:pass,data:{full_name:name}})});
+      const d=await r.json();if(d.error)throw new Error(d.error.message||d.msg||'Erro ao criar conta');
+      showErr('Conta criada! Verifique seu e-mail.');
+    }else{
+      const r=await fetch(`${SB_URL}/auth/v1/token?grant_type=password`,{method:'POST',headers:{'apikey':SB_KEY,'Content-Type':'application/json'},body:JSON.stringify({email,password:pass})});
+      const d=await r.json();
+      if(d.error||d.error_code)throw new Error(d.error_description||d.msg||'E-mail ou senha incorretos');
+      U={id:d.user?.id,email:d.user?.email,user_metadata:d.user?.user_metadata};
+      SESSION_TOKEN=d.access_token;
+      localStorage.setItem('crm_session',JSON.stringify({user:U,token:SESSION_TOKEN}));
+      onLogin();
+    }
+  }catch(e){showErr(e.message);}
+  document.getElementById('abtn').textContent=authMode==='login'?'Entrar':'Criar conta';
+}
 function showErr(m){const e=document.getElementById('aerr');e.textContent=m;e.style.display='block';}
-async function signOut(){await sb.auth.signOut();localStorage.clear();sessionStorage.clear();location.href=location.href.split('?')[0];}
+async function signOut(){try{await fetch(`${SB_URL}/auth/v1/logout`,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SESSION_TOKEN}});}catch(e){}localStorage.removeItem('crm_session');SESSION_TOKEN=null;U=null;location.reload();}
 
-sb.auth.onAuthStateChange(async(ev,session)=>{if(session){U=session.user;document.getElementById('auth').style.display='none';document.getElementById('app').classList.add('on');document.getElementById('uchip').textContent=U.user_metadata?.full_name||U.email.split('@')[0];const n=new Date();calY=n.getFullYear();calM=n.getMonth();await loadAll();render();}else{document.getElementById('auth').style.display='flex';document.getElementById('app').classList.remove('on');}});
+let SESSION_TOKEN=null;
+function onLogin(){
+  document.getElementById('auth').style.display='none';
+  document.getElementById('app').classList.add('on');
+  document.getElementById('uchip').textContent=U.user_metadata?.full_name||U.email?.split('@')[0]||'Gabe';
+  const n=new Date();calY=n.getFullYear();calM=n.getMonth();
+  loadAll().then(render).catch(e=>console.error('loadAll error:',e));
+}
+// Restore session from localStorage
+(function(){
+  try{
+    const saved=localStorage.getItem('crm_session');
+    if(saved){
+      const {user,token}=JSON.parse(saved);
+      U=user;SESSION_TOKEN=token;
+      onLogin();
+    }else{
+      document.getElementById('auth').style.display='flex';
+    }
+  }catch(e){
+    document.getElementById('auth').style.display='flex';
+  }
+})();
 
 // LOAD
-async function getToken(){try{const{data}=await sb.auth.getSession();return data?.session?.access_token||SB_KEY;}catch{return SB_KEY;}}
-async function apiFetch(table,params=''){const tok=await getToken();const r=await fetch(`${SB_URL}/rest/v1/${table}?${params}`,{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+tok}});if(!r.ok)throw new Error(await r.text());return r.json();}
-async function apiInsert(table,data){const tok=await getToken();const r=await fetch(`${SB_URL}/rest/v1/${table}`,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+tok,'Content-Type':'application/json','Prefer':'return=representation'},body:JSON.stringify(data)});if(!r.ok)throw new Error(await r.text());const d=await r.json();return Array.isArray(d)?d[0]:d;}
-async function apiUpdate(table,data,filter){const tok=await getToken();const r=await fetch(`${SB_URL}/rest/v1/${table}?${filter}`,{method:'PATCH',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+tok,'Content-Type':'application/json','Prefer':'return=representation'},body:JSON.stringify(data)});if(!r.ok)throw new Error(await r.text());return r.json();}
-async function apiDelete(table,filter){const tok=await getToken();const r=await fetch(`${SB_URL}/rest/v1/${table}?${filter}`,{method:'DELETE',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+tok}});if(!r.ok)throw new Error(await r.text());}
-async function apiUpsert(table,data,conflict){const tok=await getToken();const r=await fetch(`${SB_URL}/rest/v1/${table}?on_conflict=${conflict}`,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+tok,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=representation'},body:JSON.stringify(data)});if(!r.ok)throw new Error(await r.text());return r.json();}
+function getToken(){return SESSION_TOKEN||SB_KEY;}
+async function apiFetch(table,params=''){const tok=getToken();const r=await fetch(`${SB_URL}/rest/v1/${table}?${params}`,{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+tok}});if(!r.ok)throw new Error(await r.text());return r.json();}
+async function apiInsert(table,data){const tok=getToken();const r=await fetch(`${SB_URL}/rest/v1/${table}`,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+tok,'Content-Type':'application/json','Prefer':'return=representation'},body:JSON.stringify(data)});if(!r.ok)throw new Error(await r.text());const d=await r.json();return Array.isArray(d)?d[0]:d;}
+async function apiUpdate(table,data,filter){const tok=getToken();const r=await fetch(`${SB_URL}/rest/v1/${table}?${filter}`,{method:'PATCH',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+tok,'Content-Type':'application/json','Prefer':'return=representation'},body:JSON.stringify(data)});if(!r.ok)throw new Error(await r.text());return r.json();}
+async function apiDelete(table,filter){const tok=getToken();const r=await fetch(`${SB_URL}/rest/v1/${table}?${filter}`,{method:'DELETE',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+tok}});if(!r.ok)throw new Error(await r.text());}
+async function apiUpsert(table,data,conflict){const tok=getToken();const r=await fetch(`${SB_URL}/rest/v1/${table}?on_conflict=${conflict}`,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+tok,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=representation'},body:JSON.stringify(data)});if(!r.ok)throw new Error(await r.text());return r.json();}
 async function loadAll(){try{const[c,t,ch,m,p,o,n,f]=await Promise.all([apiFetch('clients','order=name'),apiFetch('tasks', U?.id ? `owner_id=eq.${U.id}&order=due_date` : 'order=due_date'),apiFetch('checklist_items', U?.id ? `user_id=eq.${U.id}` : ''),apiFetch('channel_metrics',''),apiFetch('projects', U?.id ? `owner_id=eq.${U.id}` : ''),apiFetch('okrs', U?.id ? `owner_id=eq.${U.id}` : ''),apiFetch('notes',''),apiFetch('files', U?.id ? `owner_id=eq.${U.id}` : '')]);CLIENTS=c||[];TASKS=t||[];CHECKS={};(ch||[]).forEach(x=>CHECKS[x.key]=x.done);METRICS={};(m||[]).forEach(x=>METRICS[`${x.client_id}|${x.channel_index}|${x.week_key}`]=x);PROJECTS=p||[];OKRS=o||[];NOTES={};(n||[]).forEach(x=>NOTES[x.client_id]=x);FILES={};(f||[]).forEach(x=>{if(!FILES[x.client_id])FILES[x.client_id]=[];FILES[x.client_id].push(x);});}catch(e){document.getElementById('main-body').innerHTML=`<div class="empty"><i class="ti ti-alert-circle"></i><p>Erro ao carregar dados.<br><small>${e.message}</small><br><br><button class="btn" onclick="loadAll().then(render)">Tentar novamente</button></p></div>`;}}
 
 // NAV
@@ -419,10 +464,14 @@ async function addAnom(id){const inp=document.getElementById(`ai-${id}`);const t
 async function delAnom(id,i){if(!NOTES[id]?.anomalies)return;NOTES[id].anomalies.splice(i,1);await apiUpsert('notes',{client_id:id,content:NOTES[id].content||'',anomalies:NOTES[id].anomalies},'client_id');renderCp();}
 
 // FILE UPLOAD
-async function upFiles(files,cid){if(!files.length)return;for(const f of Array.from(files)){const path=`${U.id}/${cid}/${Date.now()}_${f.name}`;const{error}=await sb.storage.from('client-files').upload(path,f);if(!error){const data=await apiInsert('files',{client_id:cid,owner_id:U.id,name:f.name,size:f.size,type:f.type,path});if(data){if(!FILES[cid])FILES[cid]=[];FILES[cid].push(data);}}}renderCp();}
+async function upFiles(files,cid){if(!files.length)return;for(const f of Array.from(files)){const path=`${U.id}/${cid}/${Date.now()}_${f.name}`;const ur=await fetch(`${SB_URL}/storage/v1/object/client-files/${path}`,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+getToken(),'Content-Type':f.type},body:f});const error=ur.ok?null:true;if(!error){const data=await apiInsert('files',{client_id:cid,owner_id:U.id,name:f.name,size:f.size,type:f.type,path});if(data){if(!FILES[cid])FILES[cid]=[];FILES[cid].push(data);}}}renderCp();}
 function hDrop(e,cid){e.preventDefault();e.target.closest('.uparea').classList.remove('drag');upFiles(e.dataTransfer.files,cid);}
-async function dlFile(path,name){const{data}=await sb.storage.from('client-files').createSignedUrl(path,60);if(data?.signedUrl){const a=document.createElement('a');a.href=data.signedUrl;a.download=name;a.click();}}
-async function delFile(id,cid){if(!confirm('Remover arquivo?'))return;const f=FILES[cid]?.find(x=>x.id===id);if(f)await sb.storage.from('client-files').remove([f.path]);await apiDelete('files',`id=eq.${id}`);if(FILES[cid])FILES[cid]=FILES[cid].filter(x=>x.id!==id);renderCp();}
+async function dlFile(path,name){
+  const r=await fetch(`${SB_URL}/storage/v1/object/sign/client-files/${path}`,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+getToken(),'Content-Type':'application/json'},body:JSON.stringify({expiresIn:60})});
+  const d=await r.json();
+  if(d.signedURL){const a=document.createElement('a');a.href=SB_URL+'/storage/v1'+d.signedURL;a.download=name;a.click();}
+}
+async function delFile(id,cid){if(!confirm('Remover arquivo?'))return;const f=FILES[cid]?.find(x=>x.id===id);if(f)await fetch(`${SB_URL}/storage/v1/object/client-files/${f.path}`,{method:'DELETE',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+getToken()}});await apiDelete('files',`id=eq.${id}`);if(FILES[cid])FILES[cid]=FILES[cid].filter(x=>x.id!==id);renderCp();}
 
 // ═══════════════════════════════════════════════
 // TASK ACTIONS
@@ -599,8 +648,13 @@ function cpOverview(c){
 async function uploadClientPhoto(id,input){
   const file=input.files[0];if(!file)return;
   const path=`${U.id}/${id}/photo_${Date.now()}.${file.name.split('.').pop()}`;
-  const{error}=await sb.storage.from('client-files').upload(path,file,{upsert:true});
-  if(!error){const{data}=sb.storage.from('client-files').getPublicUrl(path);const url=data?.publicUrl;if(url){const c=CLIENTS.find(x=>x.id===id);if(c)c.photo=url;await apiUpdate('clients',{photo:url},'id=eq.'+id);bHero(c);renderCp();}}
+  const fd=new FormData();fd.append('',file);
+  const r=await fetch(`${SB_URL}/storage/v1/object/client-files/${path}`,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+getToken()},body:file});
+  if(r.ok){
+    const url=`${SB_URL}/storage/v1/object/public/client-files/${path}`;
+    const c=CLIENTS.find(x=>x.id===id);if(c)c.photo=url;
+    await apiUpdate('clients',{photo:url},'id=eq.'+id);bHero(c);renderCp();
+  }
 }
 
 // ═══ METRICS TAB ═══
@@ -670,8 +724,8 @@ async function confirmDocUp(cid){
   const mo=document.getElementById('dm-'+cid)?.value||new Date().toISOString().slice(0,7),dt=selDT||'outros';
   for(const f of Array.from(pendDocFiles)){
     const path=`${U.id}/${cid}/${mo}/${dt}/${Date.now()}_${f.name}`;
-    const{error}=await sb.storage.from('client-files').upload(path,f);
-    if(!error){const data=await apiInsert('files',{client_id:cid,owner_id:U.id,name:f.name,size:f.size,type:f.type,path,doc_type:dt,month_key:mo});if(data){if(!FILES[cid])FILES[cid]=[];FILES[cid].push(data);}}
+    const r=await fetch(`${SB_URL}/storage/v1/object/client-files/${path}`,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+getToken(),'Content-Type':f.type},body:f});
+    if(r.ok){const data=await apiInsert('files',{client_id:cid,owner_id:U.id,name:f.name,size:f.size,type:f.type,path,doc_type:dt,month_key:mo});if(data){if(!FILES[cid])FILES[cid]=[];FILES[cid].push(data);}}
   }
   pendDocFiles=null;document.getElementById('dum-'+cid).style.display='none';renderCp();
 }
