@@ -276,7 +276,7 @@ let U=null,CLIENTS=[],TASKS=[],CHECKS={},METRICS={},PROJECTS=[],OKRS=[],NOTES={}
 let tab='dash',catF='all',sq='',calY,calM,wkOff=0,expCh={},activeWk=wkKey(0);
 let cpTab='info',cpId=null,taskCtx=null,projEditId=null,okrEditId=null,krN=0,dayDate=null,chkCat='0. Diamante';
 let calView='month';
-let taskView='dash';
+let taskView='dash',taskPrioFilter='';
 let taskClientFilter=null;
 let docFilter='all';
 let activeChartMetric='views';
@@ -505,13 +505,60 @@ async function saveTask(){
   const title=document.getElementById('mt-title').value.trim();
   if(!title){alert('Título obrigatório');return;}
   const selCid=document.getElementById('mt-client')?.value||'';
-  const data={title,description:document.getElementById('mt-desc').value.trim(),priority:document.getElementById('mt-prio').value,due_date:document.getElementById('mt-due').value||null,status:document.getElementById('mt-status').value,owner_id:U.id,client_id:selCid||taskCtx?.cid||null};
+  const cid=selCid||taskCtx?.cid||null;
+  const data={
+    title,
+    description:document.getElementById('mt-desc').value.trim()||null,
+    priority:document.getElementById('mt-prio').value||'med',
+    due_date:document.getElementById('mt-due').value||null,
+    status:document.getElementById('mt-status').value||'todo',
+    owner_id:U.id,
+    client_id:cid||null
+  };
   try{
     const eid=taskCtx?.editId;
-    if(eid){if(data.status==='done'){const t=TASKS.find(x=>x.id===eid);if(t&&t.status!=='done')data.completed_at=new Date().toISOString();}await apiUpdate('tasks',data,'id=eq.'+eid);const idx=TASKS.findIndex(x=>x.id===eid);if(idx>=0)TASKS[idx]={...TASKS[idx],...data};}
-    else{const ins=await apiInsert('tasks',data);if(ins)TASKS.push(ins);}
-    closeMod('m-task');if(cpId)renderCp();else render();
-  }catch(e){alert('Erro ao salvar tarefa: '+e.message);console.error(e);}
+    if(eid){
+      if(data.status==='done'){const t=TASKS.find(x=>x.id===eid);if(t&&t.status!=='done')data.completed_at=new Date().toISOString();}
+      await apiUpdate('tasks',data,'id=eq.'+eid);
+      const i=TASKS.findIndex(x=>x.id===eid);
+      if(i>=0)TASKS[i]={...TASKS[i],...data};
+    } else {
+      const ins=await apiInsert('tasks',data);
+      if(ins){TASKS.push(ins);console.log('Task saved:',ins.id,'TASKS now:',TASKS.length);}
+      else{console.error('apiInsert returned null');alert('Erro: servidor não retornou a tarefa criada');}
+    }
+    closeMod('m-task');
+    if(cpId)renderCp();else render();
+  }catch(e){
+    alert('Erro ao salvar tarefa: '+e.message);
+    console.error('saveTask error:',e);
+  }
+}
+
+async function mvT(id,st){
+  const t=TASKS.find(x=>x.id===id);if(!t)return;
+  const upd={status:st};
+  if(st==='done'&&t.status!=='done')upd.completed_at=new Date().toISOString();
+  t.status=st;if(upd.completed_at)t.completed_at=upd.completed_at;
+  try{await apiUpdate('tasks',upd,'id=eq.'+id);}catch(e){console.error('mvT error:',e);}
+  if(cpId)renderCp();else render();
+}
+
+async function delT(id){
+  if(!confirm('Remover tarefa?'))return;
+  try{await apiDelete('tasks','id=eq.'+id);}catch(e){console.error('delT error:',e);}
+  TASKS=TASKS.filter(t=>t.id!==id);
+  if(cpId)renderCp();else render();
+}
+
+async function qDone(id){
+  const t=TASKS.find(x=>x.id===id);if(!t)return;
+  const ns=t.status==='done'?'todo':'done';
+  const upd={status:ns};
+  if(ns==='done')upd.completed_at=new Date().toISOString();
+  t.status=ns;if(upd.completed_at)t.completed_at=upd.completed_at;
+  try{await apiUpdate('tasks',upd,'id=eq.'+id);}catch(e){console.error('qDone error:',e);}
+  if(cpId)renderCp();else render();
 }
 async function mvT(id,st){const t=TASKS.find(x=>x.id===id);if(!t)return;const upd={status:st};if(st==='done'&&t.status!=='done')upd.completed_at=new Date().toISOString();t.status=st;if(upd.completed_at)t.completed_at=upd.completed_at;await apiUpdate('tasks',upd,`id=eq.${id}`);if(cpId)renderCp();else render();}
 async function delT(id){if(!confirm('Remover tarefa?'))return;await apiDelete('tasks',`id=eq.${id}`);TASKS=TASKS.filter(t=>t.id!==id);if(cpId)renderCp();else render();}
@@ -549,7 +596,7 @@ document.querySelectorAll('.mbg').forEach(m=>m.addEventListener('click',e=>{if(e
 // ═══ TASKS VIEW ═══
 taskClientFilter=null;
 function rTasks(ba){
-  const tod=today(),pending=TASKS.filter(t=>t.status!=='done'),done=TASKS.filter(t=>t.status==='done');
+  const tod=today(),allT=taskPrioFilter?TASKS.filter(t=>t.priority===taskPrioFilter):TASKS,pending=allT.filter(t=>t.status!=='done'),done=allT.filter(t=>t.status==='done');const TASKS_F=allT;
   const todayT=TASKS.filter(t=>t.due_date===tod&&t.status!=='done');
   const weekT=TASKS.filter(t=>{if(!t.due_date||t.status==='done')return false;const d=new Date(t.due_date+'T12:00'),s=new Date(wkKey(0)+'T12:00'),e=new Date(s);e.setDate(s.getDate()+6);return d>=s&&d<=e;});
   const overdue=TASKS.filter(t=>t.due_date&&t.due_date<tod&&t.status!=='done');
@@ -559,7 +606,15 @@ function rTasks(ba){
     <button class="tvt${taskView==='month'?' on':''}" onclick="taskView='month';render()"><i class="ti ti-calendar-month"></i>Mês</button>
     <button class="tvt${taskView==='kanban'?' on':''}" onclick="taskView='kanban';render()"><i class="ti ti-kanban"></i>Kanban</button>
     <button class="tvt${taskView==='byclient'?' on':''}" onclick="taskView='byclient';taskClientFilter=null;render()"><i class="ti ti-users"></i>Por cliente</button>
-    <button class="btn btn-p btn-sm" style="margin-left:auto" onclick="openTaskMod(null,null)"><i class="ti ti-plus"></i>Nova tarefa</button>
+    <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
+      <select onchange="taskPrioFilter=this.value;render()" style="padding:5px 10px;border-radius:20px;font-size:12px;border:0.5px solid var(--brd);background:var(--bg);color:var(--txt);font-family:inherit;cursor:pointer">
+        <option value="">Todas prioridades</option>
+        <option value="high">🔴 Alta</option>
+        <option value="med">🟡 Média</option>
+        <option value="low">🟢 Baixa</option>
+      </select>
+      <button class="btn btn-p btn-sm" onclick="openTaskMod(null,null)"><i class="ti ti-plus"></i>Nova tarefa</button>
+    </span>
   </div>`;
   let body='';
   if(taskView==='dash'){
