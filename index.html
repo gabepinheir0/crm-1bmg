@@ -194,9 +194,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <button class="nt on" onclick="goTab('dash')" id="nt-dash"><i class="ti ti-layout-dashboard"></i>Dashboard</button>
       <button class="nt" onclick="goTab('clients')" id="nt-clients"><i class="ti ti-users"></i>Clientes</button>
       <button class="nt" onclick="goTab('calendar')" id="nt-calendar"><i class="ti ti-calendar"></i>Calendário</button>
-      <button class="nt" onclick="goTab('checklist')" id="nt-checklist"><i class="ti ti-checkbox"></i>Checklists</button>
       <button class="nt" onclick="goTab('tasks')" id="nt-tasks"><i class="ti ti-checklist"></i>Tarefas</button>
-      <button class="nt" onclick="goTab('checkcanal')" id="nt-checkcanal"><i class="ti ti-brand-youtube"></i>Check Canal</button>
+      
       <button class="nt" onclick="goTab('projects')" id="nt-projects"><i class="ti ti-rocket"></i>Projetos</button>
       <button class="nt" onclick="goTab('okr')" id="nt-okr"><i class="ti ti-target"></i>OKRs</button>
     </div>
@@ -382,7 +381,7 @@ async function loadAll(){
   const[c,t,ch,m,p,o,n,f]=await Promise.all([
     safeGet('clients','order=name'),
     safeGet('tasks','order=due_date'),
-    safeGet('checklist_items',U&&U.id?'user_id=eq.'+U.id:'limit=0'),
+    safeGet('checklist_items',U&&U.id?'owner_id=eq.'+U.id:'limit=0'),
     safeGet('channel_metrics',''),
     safeGet('projects',''),
     safeGet('okrs',''),
@@ -399,7 +398,7 @@ async function loadAll(){
 
 // NAV
 function goTab(t){tab=t;catF='all';sq='';document.querySelectorAll('.nt').forEach(e=>e.classList.remove('on'));document.getElementById('nt-'+t)?.classList.add('on');closeCp();render();}
-function render(){const ba=document.getElementById('main-body');ba.innerHTML='';if(tab==='dash')rDash(ba);else if(tab==='clients')rClients(ba);else if(tab==='calendar')rCalendar(ba);else if(tab==='checklist')rChecklist(ba);else if(tab==='checkcanal')rCheckCanal(ba);else if(tab==='projects')rProjects(ba);else if(tab==='okr')rOKR(ba);else if(tab==='tasks')rTasks(ba);}
+function render(){const ba=document.getElementById('main-body');ba.innerHTML='';if(tab==='dash')rDash(ba);else if(tab==='clients')rClients(ba);else if(tab==='calendar')rCalendar(ba);else if(tab==='projects')rProjects(ba);else if(tab==='okr')rOKR(ba);else if(tab==='tasks')rTasks(ba);}
 
 // DASHBOARD
 function rDash(ba){const total=CLIENTS.length,totalR=CLIENTS.reduce((s,c)=>s+(c.rev_1bmg||0),0),totalC=CLIENTS.reduce((s,c)=>s+(c.channels||[]).length,0),hr=CLIENTS.filter(c=>c.risk==='Alto').length,now=new Date(),tod=today();const todT=TASKS.filter(t=>t.due_date===tod&&t.status!=='done');const friT=TASKS.filter(t=>{if(!t.due_date||t.status==='done')return false;return new Date(t.due_date+'T12:00').getDay()===5;}).slice(0,5);const ov=TASKS.filter(t=>t.due_date&&t.due_date<tod&&t.status!=='done').length;const bd=CLIENTS.filter(c=>c.birthday&&new Date(c.birthday+'T12:00').getMonth()===now.getMonth()).sort((a,b)=>new Date(a.birthday).getDate()-new Date(b.birthday).getDate());const cats=['0. Diamante','1. Ouro','2. Prata','3. Bronze'],cN=['Diamante','Ouro','Prata','Bronze'],cC=['bd','bgo','bs','bb'];const catR=cats.map((c,i)=>{const cs=CLIENTS.filter(x=>x.category===c);const r=cs.reduce((s,x)=>s+(x.rev_1bmg||0),0);return`<div class="ir"><span class="il"><span class="badge ${cC[i]}">${cN[i]}</span></span><span class="iv">${cs.length} · ${fmt(r)}/ano</span></div>`;}).join('');const top5=CLIENTS.slice().sort((a,b)=>(b.rev_1bmg||0)-(a.rev_1bmg||0)).slice(0,5).map(c=>`<div class="ir" style="cursor:pointer" onclick="openCp('${c.id}')"><span class="il" style="display:flex;align-items:center;gap:8px"><div class="av ${avC(c.category)}" style="width:26px;height:26px;font-size:10px;flex-shrink:0">${c.photo?`<img src="${c.photo}" alt="">`:ini(c.name)}</div>${c.name}</span><span class="iv">${fmt(c.rev_1bmg)}</span></div>`).join('');const alerts=CLIENTS.filter(c=>c.risk!=='Baixo'||(c.obs||'').toLowerCase().includes('desmon')||(c.obs||'').toLowerCase().includes('não está no cms'));const alertR=alerts.length?alerts.map(c=>`<div class="ir"><span class="il">${c.name}</span><span class="iv">${rE(c.risk)}</span></div>`).join(''):'<div style="color:var(--txt3);font-size:13px;padding:8px 0"><i class="ti ti-circle-check"></i> Nenhum alerta</div>';const todHTML=todT.length?todT.slice(0,6).map(t=>{const c=CLIENTS.find(x=>x.id===t.client_id);return`<div class="trow"><div class="tchk${t.status==='done'?' on':''}" onclick="qDone('${t.id}')"></div><span class="tcli">${c?c.name.split(' ')[0]:'Geral'}</span><span class="ttask${t.status==='done'?' cit on':''}">${t.title}</span>${pB(t.priority)}</div>`;}).join(''):'<div style="color:var(--txt3);font-size:13px;padding:8px 0"><i class="ti ti-check"></i> Nenhuma tarefa para hoje</div>';const friHTML=friT.length?friT.map(t=>{const c=CLIENTS.find(x=>x.id===t.client_id);return`<div class="trow"><span class="tcli">${c?c.name.split(' ')[0]:'Geral'}</span><span class="ttask">${t.title}</span>${pB(t.priority)}</div>`;}).join(''):'<div style="color:var(--txt3);font-size:13px;padding:8px 0">Nenhuma tarefa para sexta</div>';ba.innerHTML=`<div class="vhdr"><h1>Dashboard</h1>${ov>0?`<span class="badge bred"><i class="ti ti-alert-circle"></i>${ov} vencida${ov>1?'s':''}</span>`:''}<div style="margin-left:auto;display:flex;gap:8px"><div class="srch"><i class="ti ti-search" style="font-size:15px;color:var(--txt3)"></i><input type="text" placeholder="Buscar..." oninput="sq=this.value;goTab('clients')"></div><button class="btn btn-p btn-sm" onclick="openClientMod()"><i class="ti ti-plus"></i>Novo cliente</button></div></div><div class="scroll"><div class="g4"><div class="mc"><div class="ml">Clientes</div><div class="mv">${total}</div><div class="ms">${totalC} canais</div></div><div class="mc"><div class="ml">Receita 1BMG / ano</div><div class="mv" style="font-size:18px">${fmt(totalR)}</div><div class="ms">Carteira total</div></div><div class="mc"><div class="ml">Receita média / mês</div><div class="mv" style="font-size:18px">${fmt(totalR/12)}</div><div class="ms">Projeção</div></div><div class="mc"><div class="ml">Risco de churn</div><div class="mv" style="color:${hr>0?'#A32D2D':'#1D9E75'}">${hr}</div><div class="ms">Em atenção</div></div></div><div class="g2"><div><div class="card"><div class="ctitle"><i class="ti ti-sun"></i>Para fazer hoje <span style="font-size:11px;font-weight:400;color:var(--txt3)">${new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'})}</span></div>${todHTML}<button class="btn btn-sm" style="margin-top:10px" onclick="openTaskMod(null,today())"><i class="ti ti-plus"></i>Adicionar tarefa</button></div><div class="card"><div class="ctitle"><i class="ti ti-calendar-week"></i>Para fazer essa sexta <span class="badge bblu" style="font-size:10px">Semanal</span></div>${friHTML}</div>${bd.length?`<div class="card"><div class="ctitle"><i class="ti ti-cake"></i>Aniversários este mês</div>${bd.map(b=>`<div class="ir"><span class="il">${b.name}</span><span class="iv" style="color:var(--txt3)">${fd(b.birthday)}</span></div>`).join('')}</div>`:''}</div><div><div class="card" style="margin-bottom:14px"><div class="ctitle"><i class="ti ti-chart-pie"></i>Distribuição por categoria</div>${catR}</div><div class="card"><div class="ctitle"><i class="ti ti-trophy"></i>Top por receita</div>${top5}</div></div></div><div class="card"><div class="ctitle"><i class="ti ti-alert-triangle"></i>Alertas e atenção</div>${alertR}</div></div>`;}
@@ -941,11 +940,66 @@ async function generateAutoTasks(){
 
 
 async function forceGenerateTasks(){
-  if(!confirm(`Gerar tarefas automáticas para todos os ${CLIENTS.length} clientes?\n\nIsso vai apagar tarefas automáticas anteriores e recriar.`)) return;
-  const d = new Date(); const realDow = d.getDay();
-  // Temporarily fake Monday
-  d.setDate(d.getDate() - (realDow===0?6:realDow-1));
-  await generateAutoTasks();
+  if(!confirm('Gerar tarefas automáticas para todos os '+CLIENTS.length+' clientes?\n\nIsso vai apagar tarefas automáticas anteriores e recriar.')) return;
+  
+  // Delete old auto tasks
+  try{ await apiDelete('tasks','type=eq.auto&owner_id=eq.'+U.id); }catch(e){ console.warn(e); }
+  TASKS = TASKS.filter(t=>t.type!=='auto');
+
+  const tod = today();
+  const d = new Date(tod+'T12:00');
+  const toStr = s => s.toISOString().slice(0,10);
+  
+  // Find next Monday (or today if Monday)
+  const dow = d.getDay();
+  const daysToMon = dow===1?0:(dow===0?1:8-dow);
+  const monday = new Date(d); monday.setDate(d.getDate()+daysToMon);
+  
+  const weekDays = Array.from({length:5},(_,i)=>{
+    const day = new Date(monday); day.setDate(monday.getDate()+i); return toStr(day);
+  });
+  const friday = new Date(monday); friday.setDate(monday.getDate()+4);
+  const fridayStr = toStr(friday);
+  
+  const year = d.getFullYear(), month = d.getMonth();
+  const lastDay = new Date(year, month+1, 0);
+  let thursdays = [];
+  for(let dy=1; dy<=lastDay.getDate(); dy++){
+    const dd = new Date(year,month,dy);
+    if(dd.getDay()===4) thursdays.push(toStr(dd));
+  }
+  const penultThursday = thursdays.length>=2?thursdays[thursdays.length-2]:thursdays[0];
+
+  const newTasks = [];
+  for(const c of CLIENTS){
+    const cl = CL_TASKS[c.category];
+    if(!cl) continue;
+    if(cl.daily.length>0){
+      for(const dayStr of weekDays){
+        newTasks.push({title:'Check diário — '+c.name,client_id:c.id,owner_id:U.id,priority:c.category==='0. Diamante'?'high':'med',status:'todo',type:'auto',due_date:dayStr,description:cl.daily.map(item=>'[ ] '+item).join('\n')});
+      }
+    }
+    if(cl.weekly.length>0){
+      newTasks.push({title:'Check semanal — '+c.name,client_id:c.id,owner_id:U.id,priority:c.category==='0. Diamante'?'high':'med',status:'todo',type:'auto',due_date:fridayStr,description:cl.weekly.map(item=>'[ ] '+item).join('\n')});
+    }
+    if(cl.monthly.length>0&&penultThursday){
+      newTasks.push({title:'Check mensal — '+c.name,client_id:c.id,owner_id:U.id,priority:c.category==='0. Diamante'?'high':'med',status:'todo',type:'auto',due_date:penultThursday,description:cl.monthly.map(item=>'[ ] '+item).join('\n')});
+    }
+  }
+
+  let created=0;
+  for(let i=0;i<newTasks.length;i+=10){
+    const batch=newTasks.slice(i,i+10);
+    try{const results=await Promise.all(batch.map(t=>apiInsert('tasks',t)));results.forEach(r=>{if(r)TASKS.push(r);});created+=batch.length;}catch(e){console.warn('batch:',e);}
+  }
+
+  console.log(created+' checks criados!');
+  render();
+  const banner=document.createElement('div');
+  banner.style.cssText='position:fixed;bottom:20px;right:20px;background:var(--txt);color:var(--bg);padding:12px 20px;border-radius:12px;font-size:13px;font-weight:600;z-index:999;box-shadow:0 4px 20px rgba(0,0,0,.2)';
+  banner.innerHTML='<i class="ti ti-check" style="color:#86EFAC"></i> '+created+' checks criados para a semana!';
+  document.body.appendChild(banner);
+  setTimeout(()=>banner.remove(),5000);
 }
 
 // PWA Service Worker
